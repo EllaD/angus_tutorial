@@ -1,1 +1,0 @@
-Snakemake is a workflow engine based out of pythong. It easily scaleable and uses 'wildcards' to easily run the workflow through many files. 
