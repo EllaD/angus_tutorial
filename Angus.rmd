@@ -1,0 +1,670 @@
+#3.20.2020
+# 9 Short Read quality and trimming
+
+Learning objectives:
+
+Install software (fastqc, multiqc, trimmomatic) via conda
+download data
+visualize read quality
+quality filter and trim reads
+
+
+
+#Install packages
+
+conda install -y -c bioconda fastqc multiqc trimmomatic
+
+#Data stores in data folder
+	Data comes from Schurch et al 2016 yeast RNAseq study 
+	3 mutant datasets (SNF2 knockout, SNF2 is a global transcription regulator
+#Make a link to quality data
+
+ln -fs ~/data/* .
+
+
+#Get HTMl output of fastqc 
+	fastqc ERR458500.fastq.gz 
+
+#Trimmomatic
+ trimmomatic SE ERR458493.fastq ILLUMINACLIP:TruSeq2-SE.fa:2:0:15 LEADING:2 TRAILING:2 SLIDINGWINDOW:4:2 MINLEN:25
+	SE-single end 
+	Input Fastq File
+	Name of Output File 
+	Illuminaclip= file with adaptor sequences, 2= # of mismatches  '0'= used for PE '15' how accurate the match must be
+	Leading and Trailing minimum quality score at the start or end of the read (if lower then removed)
+	SLIDING WINDOW '4' base pairs at at time take average quality if below '2' read is trimmed there
+	MINLEN: is read is shorter then X discard
+
+
+#Basename
+basename is a function in UNIX that is helpful for removing a uniform part of a name from a list of files. In this case, we will use basename to remove the .fastq.gz extension from the files that we’ve been working with.
+	basename ERR458493.fastq.gz .fastq.gz
+
+
+# 9.2.3.2. Trimming files using basename and for loops
+
+ella@AllAlone:~/Documents/Ella/Classes/UCONN_Bac_gen_assem_tutorial/data$ 
+	for filename in *fastq.gz
+	 do	
+	 base=$(basename $filename .fastq.gz) \
+	 echo $base \
+	 trimmomatic SE ${base}.fastq.gz ${base}.qc.fq.gz ILLUMINACLIP:TruSeq2-SE.fa:2:0:15 LEADING:2 TRAILING:2 SLIDINGWINDOW:4:2 MINLEN:25; done
+
+
+
+#10 RNA Seq read quantification with salmon
+Objectives:
+	Install read quantification program Salmon 
+	Learn quantification of RNA-seq data
+Salmon is a tool for fast transcript quantification from RNA-seq data.
+
+It requires a set of target transcripts (either from a reference or de-novo assembly) to quantify and FASTA/FASTQ file(s) containing your reads
+		Indexing and Quantification phases
+		
+
+  ###se we need target transcripts in tutorial we download the yeast transcriptome to use with trimmomatic yeast transcripts from before
+		curl -O ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/146/045/GCA_000146045.2_R64/GCA_000146045.2_R64_rna_from_genomic.fna.gz
+
+Make Inde the Yeast Transcriptome using Salmon: 
+	salmon index --index sc_index --type quasi --transcripts GCA_000146045.2_R64_rna_from_genomic.fna.gz
+
+	We can make a loop to run salmon 
+
+		for file in *.qc.fq.gz
+			do
+				salmon quant -i sc_index --libType A -r ${i} -o ${i}_quant --seqBias --gcBias --validateMappings
+
+	-i = path to index folder
+	--libType the library type of the reads you are quantifying A = automatic detect
+	-r input file (SE reads)
+	-o output folder 
+	-seqBias learn and correct for sequence specific bias in the input data
+	--gcBias learn and correct for frament-level GC biases in the input data
+	--validateMappings enables selective alignment (improves salmon's sensitivity)
+
+			done
+
+
+#11. R and RStudio introduction
+This is an RNA-seq experiment using comparing two yeast strains, SFF2 and WT. Although we’re only working with 6 samples, this was a much larger study. They sequenced 96 samples in 7 different lanes, with 45 wt and 45 mut strains. Thus, there are 45 biological replicates and 7 technical replicates present, with a total of 672 samples! 
+```{r}
+	library('tidyverse')#Umbrella packag
+	
+experiment_info <- read_tsv(file = 'https://osf.io/pzs7g/download/') 	
+
+#Explore data
+	class(experiment_info)
+	dim(experiment_info)
+	summary(experiment_info)
+	head(experiment_info)
+	tail(experiment_info)
+	str(experiment_info)
+	sum(is.na(experiment_info$X10))
+	#Last colum is empy to subset out
+	ex_info<-experiment_info[,1:9]
+	dim(ex_info)
+
+	ex_info<-rename(ex_info, units=X9)
+colnames(ex_info)
+#Column selesction and filtering
+	ex_info<-select(ex_info, Sample,"Yeast Strain", "Nucleic Acid Conc.", "Sample",  "260/280", "Total RNA")
+	filter(ex_info, 'Nucleic Acid Conc.' >1500)
+
+experiment_info_wt <- experiment_info %>% 
+  filter(`Yeast Strain` == 'WT' & `Nucleic Acid Conc.` > 1500) %>% 
+  select(Sample, `Yeast Strain`, A260, A280)
+
+		#Excercise
+samples_sequenced <- experiment_info %>% 
+  filter(`Nucleic Acid Conc.` < 1500 & `Total RNA` >= 40) %>% 
+  select(Sample, `Yeast Strain`,`Nucleic Acid Conc.`,`Total RNA`)  
+
+	head(samples_sequenced)
+
+
+			#Mutate
+	experiment_info%>%mutate(concentration_ug_ul =`Nucleic Acid Conc.` / 1000)
+
+library_start<-experiment_info%>%mutate(RNA_100=100/ (`Nucleic Acid Conc.`*10) , water=abs(RNA_100 -50) )%>%select(Sample, `Yeast Strain`, `A260`, `A280`, RNA_100, water)
+head(library_start)
+
+seq_samples<-library_start%>%mutate(A260_280=`A260`/`A280`)%>%filter(A260_280>=2.2)%>%select(Sample, `Yeast Strain`, A260_280, RNA_100, water)
+head(seq_samples)
+
+
+ena_info <- read_tsv(file = 'https://osf.io/6s4cv/download')
+sample_mapping <- read_tsv(file = 'https://osf.io/uva3r/download')
+
+dim(ena_info)
+dim(sample_mapping)
+colnames(ena_info)
+colnames(sample_mapping)
+
+
+sample_mapping <- rename(sample_mapping, run_accession = RunAccession) # would rename a column called Sample into sample_number to match with the column sample_number in ena_info
+yeast_metadata_inner <- inner_join(ena_info, sample_mapping, by = "run_accession")
+
+yeast_metadata <-  yeast_metadata_inner %>% 
+  rename(yeast_strain = Sample, lane = Lane, biol_rep = BiolRep) %>% 
+  filter(lane == 1) %>% 
+  select(run_accession, experiment_alias, read_count, fastq_bytes, fastq_md5, lane, yeast_strain, biol_rep) 
+
+head(yeast_metadata)
+
+
+samples <- c('ERR458493', 'ERR458494', 'ERR458495', 'ERR458500', 'ERR458501', 'ERR458502') # create a vector that includes the samples that we want to subset
+salmon_samples <- yeast_metadata_inner %>% 
+  filter(run_accession %in% samples) 
+
+			#ggplots
+ggplot(data=yeast_metadata, aes(x=yeast_strain,  y=read_count))+geom_jitter(alpha=0.7, color='tomato')+geom_violin(alpha=0.1)+scale_y_log10()
+ggplot(yeast_metadata, aes(x=read_count, fill=yeast_strain))+geom_histogram(color='black')
+
+```
+
+#12. Differential Expression and Visualization in R
+
+Learning objectives: 
+	create a gene-level count matrix of salmon quantification using tximport
+	perform differential expression of a single factor experiment in DESeq2
+	pERFORM QUALITY CONTROL AND EXPLORATORY VISUALIZATION OF rna-SEQ DATA IN R
+
+
+We first need to read our data into R. To do that, we will use a package called tximport. This package takes transcript-level counts and summarizes them to the gene level. It is compatible with many count input formats, including salmon.
+
+```{r}
+library(tximport)
+library(DESeq2)
+library(tidyverse)
+library(stringr)
+# read in the file from url
+samples <- read_csv("https://osf.io/cxp2w/download")
+# look at the first 6 lines
+samples[,2]<-str_replace(samples$quant_file, "~/quant/", 'data/quality_trimmed/')
+
+head(samples)	
+
+tx2gene_map <- read_tsv("https://osf.io/a75zm/download")
+head(tx2gene_map)
+
+
+txi <- tximport(files = samples$quant_file, type = "salmon", tx2gene = tx2gene_map)
+summary(txi)
+head(txi$counts)
+
+colnames(txi$counts)<-samples$sample
+
+
+
+#Run DEseq2
+
+dds<-DESeqDataSetFromTximport(txi=txi, colData=samples, design= ~condition)
+
+#DE expression
+dds<-DESeq(dds)
+
+#Results
+res<-results(dds)
+head(res)
+
+
+#We can read these results as, “Compared to SNF2 mutant, WT had a decrease of -0.2124 in log2fold change of gene expression.#
+
+#Get sigs
+res_sig<-subset(res, padj<0.05)
+res_lfc<-subset(res_sig, abs(log2FoldChange)>1)
+
+head(res_lfc)
+
+#Make some plots 
+
+plotMA(res)
+
+plotCounts(dds, gene=which.min(res$padj), intgroup="condition")
+res[which.min(res$padj),]
+
+
+#Variance stabilized transformation on the count data , while controlling for library size of samples
+
+vsd<-vst(dds)
+
+#MDS plot
+sample_dists <- assay(vsd) %>%
+  t() %>%
+  dist() %>%
+  as.matrix() 
+
+head(sample_dists)
+
+mdsData<-data.frame(cmdscale(sample_dists))
+mds<-cbind(mdsData, as.data.frame(colData(vsd)))
+head(mds)
+
+ggplot(mds, aes(X1, X2, shape=condition))+geom_point(size=4)+ theme_minimal()
+
+#HeatMap
+library(pheatmap)
+
+genes<-order(res_lfc$log2FoldChange, decreasing=TRUE)[1:20]
+annot_col<-samples%>%column_to_rownames('sample') %>%select(condition)%>% as.data.frame()
+head(annot_col)
+
+pheatmap(assay(vsd)[genes, ], cluster_rows=TRUE, show_rownames=TRUE, cluster_cols=FALSE, annotation_col=annot_col)
+
+```
+
+#13 Mapping and Variant calling on yeast transcriptome
+	Learning objectives:
+		Define and explore the concepts and implications of shotgun sequencing
+		explore coverage
+		understand the basics of mapping based varient calling
+		learn basics of actually calling varients & visualizing
+conda install -y bwa samtools bcftools
+
+Varient Calling Workflow 
+	1.) Sequence reads(Fastq)--> quality Control(Fastq) --> Alignment to genome(SAM/BAM)--> Alignment cleanup (BAM)--> Variant Calling (VCF)
+
+Here we are going to align our transcripts to the reference’s open reading frames to look for single-nucleotide variants. It’s important to think about what reference is appropriate for your experiment. Many biologically important variants exist in non-coding regions, so if we were looking at genomic sequences, it would be important to use a different reference such as the whole genome.
+
+
+curl -O https://downloads.yeastgenome.org/sequence/S288C_reference/orf_dna/orf_coding.fasta.gz
+gunzip orf_coding.fasta.gz
+head orf_coding.fasta
+
+### first step is to index the reference sequences for use by BWA.
+
+
+bwa index orf_reading.fasta
+
+###Next we do the mapping
+bwa mem -t 4 orf_coding.fasta ../data/quality_trimmed/ERR458493.qc.fq.gz > ERR458493.sam
+
+
+for file in ../data/quality_trimmed/*.qc.fq.gz
+	do
+	echo ${file}
+	name=$(basename $file .qc.fq.gz)
+	echo Working on:$name
+	bwa mem -t 4 orf_coding.fasta  ${file} > ${name}.sam
+	done
+
+	#Samtools indexing
+		samtools faidx orf_coding.fasta
+ella@AllAlone:~/Documents/Ella/Classes/UCONN_Bac_gen_assem_tutorial/mapping$ samtools view -S -b ERR458493.sam > ERR458493.bam
+
+#Sort by position in genome
+ella@AllAlone:~/Documents/Ella/Classes/UCONN_Bac_gen_assem_tutorial/mapping$ samtools sort ERR458493.bam -o ERR458493.sorted.bam
+		#Index
+			samtools index ERR458493.sorted.bam 
+	#Call Vairents with bcftools
+		AKA FIND SNPS
+	ella@AllAlone:~/Documents/Ella/Classes/UCONN_Bac_gen_assem_tutorial/mapping$ bcftools mpileup -O b -f orf_coding.fasta ERR458493.sorted.bam | bcftools call -m -v -o varients.vcf
+Next, we will use a perl script from samtools called vcfutils.pl that will filter out our variants and we can write the output to a new file.
+
+vcfutils.pl varFilter variants.vcf  > variants_filtered.vcf
+
+samtools tview ERR458493.sorted.bam orf_coding.fasta
+
+
+
+
+
+#14 Automating workflows using Bash
+		Learn what a bash/shell script is and how to write one
+		Incorporate for loops within a shell script
+	
+		look at workflow.sh to run type
+			bash wrokflow.sh 
+				into command line
+
+#15 Workflow Managmenet using Snakemake
+
+		id cases where workflow managers are helpful for automation
+		understand the components of a Snakefile: rules inputs, outputs and actions
+		write and run a snakefile
+
+conda install -y -c conda-forge -c bioconda snakemake-minimal
+
+The Snakemake workflow management system is a tool to create reproducible and scalable data analyses.
+	Keep a record of how your scripts are used and what their input dependencies are
+	Run multiple steps in sequence, parallelising where possible
+	Automatically detect if something changes and then reprocess data if needed
+
+
+
+
+#17 De novo genome assembly 
+	conda create -y -n de_novo_example
+conda activate de_novo_example
+
+conda install -y -c bioconda -c conda-forge fastqc=0.11.5 \
+              trimmomatic=0.36 spades=3.11.1 megahit=1.1.1 \
+              quast=5.0.2 bowtie2=2.2.5 anvio=5.5.0 \
+              centrifuge=1.0.4
+
+		#Get the data
+curl -L https://ndownloader.figshare.com/files/16197626 -o genomics_de_novo_temp.tar.gz
+tar -xzvf genomics_de_novo_temp.tar.gz
+rm genomics_de_novo_temp.tar.gz
+
+cd genomics_de_novo_temp/
+
+
+		#Quality Trimming and filtering 
+	wd: ~/Documents/Ella/Classes/UCONN_Bac_gen_assem_tutorial/genomics_de_novo_temp/working/
+
+
+	#Run FASTQC
+fastqc B_cepacia_raw_R1.fastq.gz B_cepacia_raw_R2.fastq.gz -t 6	
+	#Run Trimmomatic
+
+		#want 50X coverage for prokaryotic genome
+
+trimmomatic PE B_cepacia_raw_R1.fastq.gz B_cepacia_raw_R2.fastq.gz \
+            BCep_R1_paired.fastq.gz BCep_R1_unpaired.fastq.gz \
+            BCep_R2_paired.fastq.gz BCep_R2_unpaired.fastq.gz \
+            LEADING:20 TRAILING:20 SLIDINGWINDOW:5:20 MINLEN:140 \
+            -threads 6
+
+
+	#now for the assembly will use two assemblers in two different  modes:
+			SPades Default
+				Careful mode
+			Megahit Default
+				adjusted min count parameter
+	# spades.py -1 BCep_R1_paired.fastq.gz -2 BCep_R2_paired.fastq.gz \
+#           -o spades_error_corrected_reads -t 50 -m 500 \
+#           --only-error-correction
+
+
+#Takes a lot of time and memory so will just copy over results
+	cp ../downloaded_results/BCep_R?_err_corr.fq.gz .
+
+spades.py -1 BCep_R1_err_corr.fq.gz -2 BCep_R2_err_corr.fq.gz \
+          -o spades-default-assembly/ -t 6 --only-assembler
+
+
+
+#17.9.2. SPAdes in careful mode
+	This tries to find and fix mismatches after the initial assembly is finished
+		spades.py -1 BCep_R1_err_corr.fq.gz -2 BCep_R2_err_corr.fq.gz \ 
+			-o spades-careful-assembly -t 6 --only-asembler --careful
+
+#Megahit
+	the default settings are largely tuned for metagenomic assembly, and that for a generic assembly (like our case here with an isolate) when there is greater than 40X coverage it is suggested to set the --min-count parameter (which deals with the frequency of kmers and filtering out reads with unique kmers) to 3.
+
+	# megahit -1 BCep_R1_err_corr.fq.gz -2 BCep_R2_err_corr.fq.gz \
+#         -o megahit-default-assembly -t 6 --min-count 3
+
+#Comparing Assemblies 
+		 N50 (half of the total assembly size can be found in contigs >= this size) 
+		 largest contig, 
+		or fraction of reads that successfully recruit to your assembly, 
+		or how many genes we can identify,
+			
+#17.11.1. QUAST
+	QUAST is a really nice tool for comparing multiple assemblies, and for metagenome assemblies there is a comparable MetaQUAST. 
+quast -o quast-B-cep-out -r reference_genome/BCep_ref.fna \
+      -g reference_genome/BCep_ref.gff -t 6 -m 1000 \
+      -l "SPAdes-default, SPAdes-careful, MEGAHIT-default, MEGAHIT-min-count-3" \
+      spades-default-assembly/contigs.fasta \
+      spades-careful-assembly/contigs.fasta \
+      megahit-default-assembly/final.contigs.fa \
+      megahit-min-count-3-assembly/final.contigs.fa
+
+
+#17.11.2. Read recruitment
+		how well the reads that went into the assembly recruit back to it.
+		t’s sort of a way of checking to see how much of the data that went in actually ended up getting used.
+
+
+#18. De novo genome exploration
+
+	anvi’o - which stands for analysis and visualization of omics data.
+	owerful and user-friendly data visualization and exploration platform
+
+## DON'T RUN THIS CODE BLOCK; WE WILL COPY OVER THE RESULTS ##
+
+  # HMM searching for bacterial single-copy genes
+# anvi-run-hmms -I Campbell_et_al -c contigs.db -T 6
+
+  # functional annotation with DIAMOND against NCBI's COGs
+# anvi-setup-ncbi-cogs -T 6 # only needed the first time
+# anvi-run-ncbi-cogs -c contigs.db --num-threads 6
+
+  # exporting Prodigal-identified open-readin
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+g frames from anvi'o
+# anvi-get-sequences-for-gene-calls -c contigs.db -o gene_calls.fa
+
+  # setting up centrifuge for taxonomy (only needed the first time)
+# wget ftp://ftp.ccb.jhu.edu/pub/infphilo/centrifuge/data/p_compressed+h+v.tar.gz
+# tar -xzvf p_compressed+h+v.tar.gz && rm -rf p_compressed+h+v.tar.gz
+
+  # running centrifuge taxonomy (this taxonomically classifies each identified coding sequence)
+# centrifuge -f -x p_compressed+h+v gene_calls.fa -S centrifuge_hits.tsv -p 6
+
+  # importing the taxonomy results into our anvi'o contigs database
+# anvi-import-taxonomy-for-genes -p centrifuge -c contigs.db \
+#                                -i centrifuge_report.tsv \
+#                                centrifuge_hits.tsv
+
+
+#Building bowtie index from our selected assembly fasta file 
+		bowtie2-build spades-careful-assembly/contigs.fasta \
+              spades-careful-assembly.btindex
+
+ # mapping our reads (takes ~1 min.)
+bowtie2 -q -x spades-careful-assembly.btindex \
+        -1 BCep_R1_err_corr.fq.gz -2 BCep_R2_err_corr.fq.gz \
+        -p 6 -S spades-careful-assembly.sam
+
+
+ # converting to a bam file (takes < 1 min.)
+samtools view -bS spades-careful-assembly.sam > B-cep-assembly.bam
+
+ # sorting and indexing our bam file (takes < 1 min.)
+anvi-init-bam B-cep-assembly.bam -o B-cep.bam
+
+
+
+
+
+
+ # this is adding all contigs to a group called "DEFAULT"
+anvi-script-add-default-collection -p B-cep-profiled/PROFILE.db
+  # and here is our summary command
+anvi-summarize -c contigs.db -p B-cep-profiled/PROFILE.db \
+               -C DEFAULT -o B-cepacia-assembly-summary/
+
+
+#19. Some more practical use of Unix
+
+Here we will compare the results of that assembly to the reference RNA sequences from NCBI (specifically the GCF000146045.2_R64_rna.fna.gz file from here) while getting some more practice at the command line!\
+
+
+conda create -y -n blast_env -c conda-forge -c bioconda blast gnutls
+source activate blast_env
+
+wd: more-unix-fun/
+
+
+grep -c ">" our-transcriptome-assembly.fa
+grep -c ">" ref-transcripts.fa
+
+makeblastdb -dbtype nucl -in ref-transcripts.fa -out ref-transcripts.blastdb
+
+#Blasting our assembly against the reference
+blastn -query our-transcriptome-assembly.fa -db ref-transcripts.blastdb \
+       -max_target_seqs 1 -max_hsps 1 \
+       -out assembly-to-ref-blastout.tsv \
+       -outfmt "6 qseqid qlen sseqid slen length pident evalue bitscore"
+
+What didn't align?
+	wc -l assembly-to-ref-blastout.tsv
+	echo "3323-3262" | bc
+
+
+Here are the steps we’ll take to get the sequences that didn’t align, and then try to find out what they are:
+
+get all the names of the contigs from our assembly
+get all the names of the contigs from our assembly that were reported as “hits” in the blast output
+compare these to figure out which contigs from our assembly are not in the list of contigs reported as successfully aligning to the reference
+use this new list of contig names to pull out their sequences in fasta format
+blast the sequences against NCBI’s nr database “remotely” (from the command line, sending our sequences to the NCBI servers)
+
+
+grep ">" our-transcriptome-assembly.fa | tr -d ">" | cut -f1 -d " " | sort > all-assembly-contig-IDs.txt
+
+cut -f1 assembly-to-ref-blastout.tsv | sort > all-assembly-contig-IDs-with-hits.txt
+comm -23 all-assembly-contig-IDs.txt all-assembly-contig-IDs-with-hits.txt > all-assembly-contig-IDs-that-did-not-hit-ref.txt
+
+wc -l all-assembly-contig-IDs-that-did-not-hit-ref.txt
+
+
+#Make a four loot to get fata seqs
+
+for header in $(cat all-assembly-contig-IDs-no-hits.txt)
+do
+	grep -A1 "$header" our-transcriptome-assembly.fa
+done > contigs-not-in-ref.fa
+
+curl -L https://ndownloader.figshare.com/files/16219079 -o taxdb.tar.gz
+tar -xzvf taxdb.tar.gz
+
+#Blast them
+nohup blastn -query contigs-not-in-ref.fa -remote -db nr \
+       -max_target_seqs 1 -max_hsps 1 \
+       -out contigs-not-in-ref-blast-to-nr.tsv \
+       -outfmt "6 qseqid qlen sseqid slen length pident evalue bitscore ssciname"
+
+
+
+#20. Version Control with GitHub
+		Learning Objectives:
+			Learn about version Control
+			Learn about Github repositories
+			Create Local repositories
+			Backup you work online using git
+
+#21. Microbial Ecology - a discussion and overview of amplicon sequencing and metagenomics
+Shotgun metagenomic sequencing aims to amplify all the accessible DNA of a mixed community. 
+
+#23. De novo transcriptome assembly
+	learning objectives:
+		Learn what transcriptome assembly is 
+		Learn to differentiate different types of assemblies
+		Discuss how do assemblers work
+		Learn to check the quality of a transcriptome assembly
+
+
+Trinity, one of the leading de novo transcriptome assemblers
+
+
+We will be using a set of Nematostella vectensis mRNAseq reads from Tulin et al., 2013.
+
+conda install -c conda-forge snakemake-minimal
+
+#Run the snakemake file
+	snakemake -s nema_trim.snakefile --use-conda --cores 6
+
+	mkdir assembly
+	cd assembly
+
+	ln -fs ../nema_trimmed/*.qc.fq.gz .
+	ls
+
+
+cat *_1.pe.qc.fq.gz *se.qc.fq.gz > left.fq.gz
+cat *_2.pe.qc.fq.gz > right.fq.gz
+
+###Run the Assembler
+		conda create -y -n trinity-env trinitiy
+		conda activate trinity-env
+
+time Trinity --seqType fq --max_memory 16G --CPU 6 --left left.fq.gz --right right.fq.gz --output nema_trinity
+
+
+
+#24 Annotating and evaluating a de novo transcriptome assembly
+	Learning objectives:
+		how to annotate a de novo transcriptome assembly
+		parse GFF3 output from the annotation output to use for DE analysis 
+		several methosd for evaluating the completeness of a de novo transcriptome assembly 
+		What a Jupyter notebook is and how to execute a few commands in Python
+dammit is an annotation pipeline 
+it begins by building gene models with Transdecoder, then uses the following protein databases as evidence for annotation: Pfam-A, Rfam, OrthoDB, uniref90 (uniref is optional with--full).
+ BUSCO v3 is run, which will compare the gene content in your transcriptome with a lineage-specific data set
+
+We will use the metazoa dataset for this transcriptome.
+
+
+We used the “metazoa” BUSCO group. We can use any of the BUSCO databases, so long as we install them with the dammit databases subcommand. You can see the whole list by running dammit databases -h. You should try to match your species as closely as possible for the best results. If we want to install another, for example:
+
+Now, we can input our assembly fasta file -> query databases -> and get output annotations with gene names for each contig - all in one step
+BUSCO aims to provide a quantitative measure of transcriptome (or genome/gene set) completeness by searching for near-universal single-copy orthologs. 
+
+
+
+#25. Quick Insights from Sequencing Data with sourmash
+Discuss k-mers and their utility
+Compare RNA-seq samples quickly
+Detect eukaryotic contamination in raw RNA-seq reads
+Compare reads to an assembly
+Build your own database for searching
+Other sourmash databases
+
+
+
+curl -L https://osf.io/963dg/download -o ecoliMG1655.fa.gz 
+gunzip -c ecoliMG1655.fa.gz | head
+
+
+
+#25.9. Compare many RNA-seq samples quickly
+
+We generated signatures for the majority of the rest of the Schurch et al. experiment we have been working with this week. Below we download and compare the 647 signatures, and then produce a plot that shows how similar they are to one another
+
+Next, compare the signatures using sourmash.
+
+sourmash compare -k 31 -o schurch_compare_matrix schurch_sigs/*sig
+sourmash plot --labels schurch_compare_matrix
+
+sourmash gather -k 31 --scaled 2000 -o wine.csv wine.sig so
+urmash_euk_rna_db/*sbt.json sourmash_euk_rna_db/*sig
+
+
+Found an alignment to a house mouse likely contaminated sequences should be removed 
+
+
+###25.11 compare reads to assemblies
+	Use case: how much of the read content is contained in the reference genome?
+
+and now evaluate containment, that is, what fraction of the read content is contained in the genome:
+
+sourmash search -k 31 ecoli-reads.sig ecoli-genome.sig --containment
+
+
+detect contamination in sequencing data;
+index and search private sequencing collections;
+search all of SRA for overlaps in metagenomes
+
+
+
+
+#26 RNA-Seq Analysis (will be done in seperate file 
+
+
