@@ -1,0 +1,9 @@
+This is the code to push things to the Git Hub
+
+
+echo "# angus_tutorial" >> README.md
+git init
+git add README.md
+git commit -m "first commit"
+git remote add origin https://github.com/ZellaD/angus_tutorial.git
+git push -u origin master
