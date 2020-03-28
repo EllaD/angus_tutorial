@@ -30,6 +30,5 @@ The Language
 Snakemake will not execute rules if the output files are already created so no duplication in the workflow
 
 			
-sequanix: a GUI for snakemake 
 	
 		

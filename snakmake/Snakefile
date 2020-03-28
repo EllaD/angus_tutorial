@@ -1,0 +1,66 @@
+
+#Snakemake can also se the working directory and cores you like to use 
+                #Snakemake --config wordif" -"insert/wd/here"
+                #snakemake --cores #
+
+#Snakemake can make a cool graphics  of workflow using:
+		#snakemake --dag | dot -Tpng > dag.png
+	#requires graphvis
+#Also create an html report
+	#snakemake --report report.html
+
+# Create a list of strings containing all of our sample names
+SAMPLES=['ERR458493', 'ERR458494', 'ERR458495', 'ERR458500', 'ERR458501', 
+'ERR458502']
+
+
+"""The first rule (rule all: ) tells snakemake what the final output should be and snakemake will rund the rules in the workflow neede to be run to generate that specific input file. The next rule is the first rule in the workflowand so one and so forth"""
+
+
+rule all:
+    input:
+        "data/fastqc_trimmed/multiqc_report.html"
+
+rule fastqc_raw:
+    input: "data/{sample}.fastq.gz"
+    output: 
+        "fastqc_raw/{sample}_fastqc.html",
+        "fastqc_raw/{sample}_fastqc.zip"
+    shell:'''
+    fastqc -o fastqc_raw {input}
+    '''
+#Here we have to wildcards. The first being {input} which is defined within the rule. 
+        #The second being {sample} which is the unique id of the file names we'd like to text
+
+rule multiqc_raw:
+    input: expand("fastqc_raw/{sample}_fastqc.html", sample = SAMPLES)
+    output: "fastqc_raw/multiqc_report.html"
+    shell:'''
+    multiqc -o fastqc_raw fastqc_raw
+    '''
+
+#Trimmomatic for quality control 
+rule trim:
+    input: "data/{sample}.fastq.gz"
+    output:"data/{sample}.qc.fastq.gz"
+    shell:'''
+	trimmomatic SE {input} {output} ILLUMINACLIP:data/TruSeq2-SE.fa:2:0:15 LEADING:2 TRAILING:2 SLIDINGWINDOW:4:2 MINLEN:25
+    '''
+
+
+#Re-run fastqc to ensure qc in trimmomatic was adequate
+rule fastqc_trimmed:
+    input: "data/{sample}.qc.fastq.gz"
+    output: 
+        "data/fastqc_trimmed/{sample}_trimmed.fastqc.html",
+        "data/fastqc_trimmed/{sample}_trimmed.fastqc.zip"
+    shell:'''
+    fastqc -o data/fastqc_trimmed {input}
+    '''
+
+rule multiqc_trimmed:
+    input: expand("data/fastqc_trimmed/{sample}_trimmed.fastqc.html", sample = SAMPLES)
+    output: "data/fastqc_trimmed/multiqc_report.html"
+    shell:'''
+    multiqc -o data/fastqc_trimmed fastqc_trimmed
+    '''
