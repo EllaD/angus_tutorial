@@ -1,0 +1,54 @@
+---
+title: "Salmon Program notes"
+date: 3.29.2020
+Author: ZellaD
+output:html_document
+	toc:true
+	toc_depth:2
+	toc_float:true
+---
+
+#Salmon provides accurate, fast, and bias-aware transcrip expression estimates using dual-phase inferance 
+###Patro et al.  2016
+
+
+##Pros to Salmon
+Salmon:
+	A new method for quantifying transcript abundance from RNA-seq reads 
+	Uses a dual phase parallel inference algorithm not an alignment based methods
+	Aurhor Claims: 
+		order of magnitude faster speed benefits over other methods and similar speeds to kallisto and Sailfish
+		Best in accuracy 
+		includes sample specific bias modesl 
+		high-fidelity
+		ex. 600million reads + 30 threads= 23 minutes until output
+		Open-source written in C++11
+
+Traditional methods often require high computational resources and need full alignments. This is not scalable to modern data output. 
+
+##Other Modern Methods
+Sailfish and Kallisto are newer tools which are faster
+	Sailfish works by means of k-mers
+	Kallisto works by means of pseudoalignment
+
+##How Salmon Works
+
+Salmon has two phases:
+	1.) online inference phase
+		continuous update of transcript abudnance
+		per-fragment probability evaluations
+		estimates initial expression levels and model parameters
+		collapsed variational Bayesian inference
+	2.) offline inference phase
+		highly-reduced representation of the sequencing experiment 
+		refines expression estimates
+		Either EM algorithm or variational Bayesian EM algorithm
+	Alightweight mapping model is also included
+	Together these phases produces a 'probabilsitic model of the sequencing experiment'
+
+###Workflow
+Inputs maybe:
+	1.)raw reads (fastq files) which go straight to quasi-mapping step then online inference followed by offline inference
+		reference transcripts can be indexed using Salmon index then quasi mapping with raw reads
+	2.)aligned reads (bam file) & reference transcripts can but inputted directly into online inference then to offline inference
+
