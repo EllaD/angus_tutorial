@@ -1,0 +1,145 @@
+---
+title: Introduction to DGE
+author: Elizabeth Deyett 
+date: March 31, 2020
+output: html_notebook
+toc: true
+---
+
+
+#DESeq is used to determine if the mean expression levels of a group is statistically different from another sample group
+DESeq2 has also been used with microbiome data as they share simlar properties with RNA-seq analysis such a zero-inflation and generaly stored as count data. 
+Count data is a matrix/dataframe with samples as the rows and the number of genes/microbes found in each sample as the columns. DESeq2 is a package within R developed to find differentially expressed genes using negative binomial generalized linear models. It does so by estimating dispersion of each gene/microbe and reports the log fold changes between groups. 
+
+
+Because DESeq2 performs its own normalization it is important to use **un-normalized/raw count data** 
+
+Love, M.I., Huber, W., Anders, S. (2014) Moderated estimation of fold change and dispersion for RNA-seq data with DESeq2. Genome Biology, 15:550. 10.1186/s13059-014-0550-8
+
+Tutorial from [hbctraining] ( https://hbctraining.github.io/DGE_workshop/lessons/04_DGE_DESeq2_analysis.html)
+ 
+
+##Objectives of Tutorial
+	1.) Understanding Deseq2 and its steps
+	2.) Executing the standard analysis withing Deseq2
+	3.) Understanding and designing experimental design and design formulas
+	4.) Exploring dispersion and understanding what it means 
+
+
+
+##DEseq2 Workflow:
+	1.) Estimate size factors
+	2.) Estimate gene-wise dispersions
+	3.) Fit curve to gene-wise dispersion estimates
+	4.) Shrink- gene-wise dispersion estimates
+	5.) GLM fit for each gene 
+	6.) Shrinking log2 fold changes
+	7.) Test for differential expression 
+		The statistical test used is either Wald test or Likelihood Ratio test. 
+
+##Running DESeq2
+Bioinformatics is a great tool to better understand sequencing data. But its important to understand the biology as well. 
+In addition to understanding the important variable of interest (i.e. condition, tissue, species etc.) it's also important to understand what the metadata is for each of the samples and how these factors my play a role in variation (i.e. year, climate, age, medications/pesticide application etc.) These confounding variable may be removed prior to analysis or they can be 'controlled' by the DESeq algorithm.
+
+###Design formula
+To account for all confounding variables (sources of variation) it's important to properly articulate you design formula. All major sources of variation should be included in thie design formulat with the most important or the variable of interest occuring at the end of the formula. 
+for ex.
+
+```{r, echo=FALSE, message=FALSE, warnings=FALSE, results='asis'}
+library(knitr)
+metadat<-data.frame(SampleID=paste0('sample', 1:8), 
+	Year=rep(c("2019", "2020"), each=4), 
+	Cultivar=unlist(rep(list(c("Merlot", "Cab")), each=4)),
+	Rep=unlist(rep(list(c("1", "2")), each=4)),
+	treatment=unlist(rep(list(c("Ctrl", "Ctrl", "Treat", "Treat")), each=2)))
+
+kable(metadat, caption= "Example Metatdata")
+
+```
+
+In this example we would like to find differentially expressed genes between control and treated samples; however, we have Year, Cultivar, as confounding variables or sources of variation. 
+
+A designed formula could look like:
+design<- ~Year+Cultivar+treatment
+design<- ~sex+treatment+age This is where age is the variable of interest and sex and treatment are sources of variation
+
+
+####Complex Designs
+But sometimes biology is not so clean and more complex designs are needed
+
+For example suppose we wanted to explor the effect that cultivars have on the treatment effect. Now cultivar is not merely a source of varition but a piece of the overall interest
+
+design<- ~Year+Cultivar+treatment+Cultivar:Treatment
+Because the effect of cultivar on the treatment effect is the interested variable it goes last. 
+Alternatively you can create a variable which combines the two variables into one. This approach is recommended by the [DESeq2 vignette] (https://www.bioconductor.org/packages/devel/bioc/vignettes/DESeq2/inst/doc/DESeq2.html#interactions)
+
+
+```{r, echo=FALSE, results='asis'}
+metadat$CultTreat<-paste0(metadat$Cultivar, "_", metadat$treatment)
+
+kable(metadat)
+
+```
+
+and so the design formula would be:
+design<- ~Year+CultTreat
+
+Notice we drop the terms that are captured by our new column CultTreat otherswise they would be counted twice and become confounded 
+
+When creating designed formulas with factors its important that the **control** variable is listed first. You many need to reorder your factor. 
+
+The design formula can be tricky but once you have it running DESeq2 only takes 2 lines of code! XD
+
+The first line creates a DESeqDataSet and uses our design formula which will be used to create the model. 
+
+
+```{r, eval=FLASE, echo=T}
+#Creat the DESEqDataSet
+dds<-DESeqDataSetFromMatrix(countdata=data, colData=metadat, design=~Year+CultTreat)
+
+```
+Note DESeqDataSet-class has many forms depending on where the data is comimg from. 
+Including importing from Phyloseq objects, TXimport, HTSseqcount and others. 
+
+The next line runs the analysis from normalization to modeling. Its that simple!
+
+```{r. eval=FALSE, echo=T}
+dds<-DESeq(dds)
+
+```
+
+##Breakdown of steps
+
+
+###Step 1: Estimate Size factors
+To Estimate side factors, DESEq2 uses the median of ratios method
+You can also generate the size factors using the funciton estimateSizeFactors()
+And can check size factors for the samples with sizeFactors() function
+
+
+###Step 2: Estimate gene-wise dispersion
+* Dispersion is the measure of spread of the data 
+	+ Variance, standard deviation, IQR are all measures of dispersion
+	+ In DESeq2, dispersion is measured in relation to the mean and variance of the data
+* In otherwords variance is equal to the mean plut the disperion multiplied by the mean squared 
+	+ so 0.01 disperion is equal to 10% variation around the mean expected across biological replicate 
+* Dispersion is inversely related to the mean, directly related to the variance
+	+ disperions is higher for smaller counts and lower for larger meant counts
+
+
+###Step 3: Fit curve to gene-wise dispersion estimates
+Now DESeq2 will fit a curve to the dispersion estimates 
+
+
+###Step4: Shrink gene-wise dispersion estimates toward the values predicted by the curve
+shrink the gene-wise dispersion estimates to the expected dispersion values. This helps with small sample sizes. 
+
+* Shrinkage depends on:
+	+ proximity of dispersions to curve
+	+ sample size (more samples less shrinkage)
+**Helps with eliminated false positives**
+
+function plotDispEsts() can be useful to examine how your data fits the dispersion model
+
+
+
